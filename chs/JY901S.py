@@ -259,10 +259,10 @@ def onUpdate(deviceModel):
             rmsva = 1  # 如果没有数据，RMSVA 为 0
 
         #输出加速度数据和 RMSVA
-        print("芯片时间:" + str(deviceModel.getDeviceData("Chiptime"))
-              , " 加速度：" + str(accX) + "," + str(accY) + "," + str(accZ)
-              , " 世界坐标系加速度:", round(acc_worldX, 4), round(acc_worldY, 4), round(acc_worldZ, 4)
-              , " 竖直加速度均方根值 (RMSVA):", round(rmsva, 4))
+        # print("芯片时间:" + str(deviceModel.getDeviceData("Chiptime"))
+        #       , " 加速度：" + str(accX) + "," + str(accY) + "," + str(accZ)
+        #       , " 世界坐标系加速度:", round(acc_worldX, 4), round(acc_worldY, 4), round(acc_worldZ, 4)
+        #       , " 竖直加速度均方根值 (RMSVA):", round(rmsva, 4))
 
         # 清空竖直加速度列表，重新开始新的时间窗口
         accZ_world_values = []
