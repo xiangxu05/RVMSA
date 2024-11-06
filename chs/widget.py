@@ -25,12 +25,13 @@ from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 from PyQt5.QtChart import QChart, QChartView, QLineSeries, QValueAxis
 from PyQt5.QtCore import QPointF
-from PyQt5.QtGui import QPainter,QIcon
-
+from PyQt5.QtGui import QPainter,QIcon,QImage, QPainter
 import chs.lib.device_model as deviceModel
 from chs.lib.data_processor.roles.jy901s_dataProcessor import JY901SDataProcessor
 from chs.lib.protocol_resolver.roles.wit_protocol_resolver import WitProtocolResolver
 import serial.tools.list_ports
+from PyQt5.QtCore import QThread, pyqtSignal
+from Multi_modal_functionality import DataStorageThread
 
 class Ui_Widget(object):
 
@@ -385,7 +386,7 @@ class Ui_Widget(object):
         QtCore.QMetaObject.connectSlotsByName(Widget)
 
         self.startButton.clicked.connect(lambda: self.start_button_clicked(Widget))
-        self.stopButton.clicked.connect(lambda: self.stop_button_clicked(Widget))
+        #self.stopButton.clicked.connect(lambda: self.stop_button_clicked(Widget))
         self.connectButton.clicked.connect(lambda: self.connect_button_clicked(Widget))
         self.browseButton.clicked.connect(lambda:self.browse_button_clicked(Widget))
         # 查询可用的串口
@@ -470,31 +471,68 @@ class Ui_Widget(object):
         except Exception as e:
             print(f"发生错误: {e}")
     def start_button_clicked(self, Widget):
-        '''
-        :以下代码首先启动摄像头，然后启动定时器
-        '''
-        # 创建 QGraphicsScene
-        self.scene = QGraphicsScene(Widget)  # 将 Widget 作为父对象
+        if(self.startButton.text() == "开始检测"):
+            '''
+            :以下代码首先启动摄像头，然后启动定时器
+            '''
+            # 创建 QGraphicsScene
+            self.scene = QGraphicsScene(Widget)  # 将 Widget 作为父对象
 
-        # 设置场景
-        self.cemeraView.setScene(self.scene)
+            # 设置场景
+            self.cemeraView.setScene(self.scene)
 
-        # 创建摄像头
-        self.camera = QCamera()
+            # 创建摄像头
+            self.camera = QCamera()
 
-        # 创建摄像头查看器
-        self.viewfinder = QCameraViewfinder()
-        self.viewfinder.setMinimumSize(400, 350)
+            # 创建摄像头查看器
+            self.viewfinder = QCameraViewfinder()
+            self.viewfinder.setMinimumSize(400, 350)
 
-        # 将查看器添加到 rmsvaView_4
-        self.scene.addWidget(self.viewfinder)
+            # 将查看器添加到
+            self.scene.addWidget(self.viewfinder)
 
-        # 设置摄像头查看器为 camera
-        self.camera.setViewfinder(self.viewfinder)
-        self.camera.start()  # 启动摄像头
+            # 设置摄像头查看器为 camera
+            self.camera.setViewfinder(self.viewfinder)
+            self.camera.start()  # 启动摄像头
 
-        # 启动定时器
-        self.timer.start()
+            # 启动定时器
+            self.timer.start()
+            self.startButton.setText("停止检测")
+            self.thread = DataStorageThread(self.filePath.text())  # 初始化线程
+            self.thread.start()  # 启动线程
+        elif(self.startButton.text() == "停止检测"):
+            '''
+                    :以下代码首先关闭定时器，关闭摄像头
+                    '''
+            # 关闭定时器
+            self.timer.stop()
+
+            # 检查摄像头是否已经启动
+            if hasattr(self, 'camera') and self.camera is not None:
+                self.camera.stop()  # 停止摄像头
+                self.camera.deleteLater()  # 释放摄像头资源
+
+                # 移除查看器
+                if hasattr(self, 'viewfinder') and self.viewfinder is not None:
+                    self.viewfinder.deleteLater()  # 删除查看器
+
+                # 清空场景
+                if hasattr(self, 'scene') and self.scene is not None:
+                    self.scene.clear()  # 清除场景中的所有项目
+
+            chart = self.rmvsaView.chart()
+            series = chart.series()[0]
+            series.clear()
+            x_axis = chart.axisX()
+            y_axis = chart.axisY()
+            x_axis.setRange(0, 10)
+            y_axis.setRange(0, 1)
+            self.rmvsaView.repaint()
+            self.longitudeLabel.setText("0")
+            self.longitudeLabel_2.setText("0")
+            self.heightLabel.setText("0")
+            self.startButton.setText("开始检测")
+
 
     def stop_button_clicked(self, Widget):
         '''
@@ -575,11 +613,24 @@ class Ui_Widget(object):
             print("RMSVA 为 None，未更新图表")
             QMessageBox.warning(None, "警告", "尚未连接设备！")
             self.timer.stop()
+        try:
+            if(self.filePath.text() != ""):
+                # 创建 QImage 对象
+                image = QImage(self.viewfinder.size(), QImage.Format_ARGB32)  # 使用 ARGB32 格式
+                painter = QPainter(image)
+                self.viewfinder.render(painter)
+                painter.end()
+                self.thread.receiveData.emit(rmsva, lon, lat, image)
+        except Exception as e:
+            print(f"Error in send_data: {e}")
+
+
     def connect_button_clicked(self,Widget):
         try:
             if self.connectButton.text() == "取消连接":
                 self.device_model.closeDevice()
-                self.stop_button_clicked(self)
+                if(self.startButton.text() == "停止检测"):
+                    self.start_button_clicked(self)
                 self.connectButton.setText("连接")
                 self.serialStatu.setStyleSheet(self.RedStyleSheet)
                 self.gpsStatu.setStyleSheet(self.RedStyleSheet)
@@ -601,8 +652,6 @@ class Ui_Widget(object):
             self.gpsStatu.setStyleSheet(self.GreenStyleSheet)
             self.rtkStatu.setStyleSheet(self.GreenStyleSheet)
             self.connectButton.setText("取消连接")
-
-
 
         except Exception as e:
             # 弹出错误信息框，提示用户串口打开失败
@@ -626,7 +675,7 @@ class Ui_Widget(object):
         self.label_4.setText(_translate("Widget", "文件路径"))
         self.browseButton.setText(_translate("Widget", "浏览"))
         self.startButton.setText(_translate("Widget", "开始检测"))
-        self.stopButton.setText(_translate("Widget", "停止检测"))
+        self.stopButton.setText(_translate("Widget", "模型检测"))
         self.label_5.setText(_translate("Widget", "定位模式"))
         self.label_6.setText(_translate("Widget", "GPS"))
         self.label_10.setText(_translate("Widget", "RTK"))
